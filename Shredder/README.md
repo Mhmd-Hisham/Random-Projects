@@ -34,4 +34,4 @@ optional arguments:
 Mohamed Hisham – [Gmail](mailto:Mohamed00Hisham@Gmail.com) | [GitHub](https://github.com/Mhmd-Hisham) | [LinkedIn](https://www.linkedin.com/in/Mhmd-Hisham/)
 
 ## License
-This project is licensed under the GNU GPLv3 License - check [LICENSE](LICENSE) for more details.
+This project is licensed under the GNU GPLv3 License - check [LICENSE](../LICENSE) for more details.
