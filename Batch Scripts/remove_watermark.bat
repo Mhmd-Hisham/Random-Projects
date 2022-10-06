@@ -1,0 +1,2 @@
+bcdedit -set TESTSIGNING OFF
+PAUSE
