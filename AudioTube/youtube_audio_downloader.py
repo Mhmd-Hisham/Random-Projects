@@ -4,8 +4,10 @@
 import os
 import sys
 import time
+import random
 import argparse
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -15,6 +17,11 @@ from pytube import Playlist
 from YTAudioDownloader import YTAudioDownloader
 from MP3MetaDataEditor import MP3MetaDataEditor
 
+NUM_WORKERS = 8
+
+def write_log(text: str, verbose: bool, *args: list, **kwargs: dict):
+    if verbose:
+        print(text, *args, **kwargs)
 
 def get_opt_parser() -> argparse.ArgumentParser:
     """Parse command-line options."""
@@ -32,7 +39,7 @@ def get_opt_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--album-title", help="Set the album title in the MP3 metadata", default="", dest="album_title")
     parser.add_argument(
-        "--artist", help="Set the artist of the song in the MP3 metdata", dest="artist", default="")
+        "--artist", help="Set the artist of the song in the MP3 metadata", dest="artist", default="")
     parser.add_argument(
         "-p", "--playlist", help="Download songs from a youtube playlist.", dest='playlist_url', default="")
     parser.add_argument(
@@ -43,17 +50,17 @@ def get_opt_parser() -> argparse.ArgumentParser:
 def convert_to_mp3(input_filename: str, delete_original: bool = True) -> str:
     # input_filename =  f"'{input_filename}'"
     # output_filename = f"'{output_filename}'"
-
+    
     # os.rename(input_filename, input_filename.replace(" ", "_"))
     # os.rename(output_filename, output_filename.replace(" ", "_"))
     # input_filename  = input_filename.replace(" ", "_")
     # output_filename = output_filename.replace(" ", "_")
 
     filename, old_ext = input_filename.split(".")
-    temp_file = f"input_file.{old_ext}"
+    temp_file = f"temp_file-{hash(random.random())}.{old_ext}"
     os.rename(input_filename, temp_file)
 
-    output_filename = "output_file.mp3"
+    output_filename = f"output_file-{hash(random.random())}.mp3"
     ffmpeg.input(temp_file).output(output_filename).run(
         quiet=True, overwrite_output=True)
 
@@ -104,7 +111,7 @@ def inject_metadata(filename: str, metadata: dict, save: bool = True) -> None:
         # save the metadata to the file
         editor.save_metadata_to_file()
 
-def get_url_list(options):
+def get_url_list(options: argparse.ArgumentParser):
     urls = []
     if options.url != "":
         urls.append(options.url)
@@ -119,6 +126,36 @@ def get_url_list(options):
 
     return urls
 
+def process_url(url: str, options: argparse.ArgumentParser, verbose: bool=True):
+    # download the audio file
+    t0 = time.time()
+    log = lambda text: write_log(text, flush=True, verbose=verbose)
+    log(f"Parsing '{url}'")
+    # print(f"Downloading audio..  ", end='', flush=True)
+    downloader = YTAudioDownloader(url, options.directory)
+    filename = downloader.filename
+    if downloader.file_exists and not options.override:
+        log(f"File '{filename}' already exists! Skipping!")
+        return None
+
+    elapsed = timedelta(seconds=round(time.time() - t0))
+    log(f"Finished downloading '{filename}'! [{elapsed}]")
+
+    mp3_filename = downloader.basename + ".mp3"
+    # convert to MP3 as the metadata injector only supports MP3 files
+    if (downloader.ext != ".mp3"):
+        mp3_filename = convert_to_mp3(filename, delete_original=True)
+        log(f"Converted '{filename}' to an MP3 file!")
+
+    # inject metadata
+    metadata = get_metadata_from_downloader(downloader)
+    metadata["title"] = options.title if options.title != "" else metadata["title"]
+    metadata["artist"] = options.artist if options.artist != "" else metadata["artist"]
+    metadata["album_title"] = options.album_title if options.album_title != "" else metadata["album_title"]
+    inject_metadata(mp3_filename, metadata)
+    log(f"Injected metadata to '{filename}'!")
+    return filename
+
 def main():
     options = get_opt_parser()
 
@@ -127,40 +164,17 @@ def main():
         print("Please specify any url using the command line arguments!")
         return
 
-    for url in urls:
-        # download the audio file
-        t0 = time.time()
-        print(f"Parsing '{url}'")
-        print(f"Downloading audio..  ", end='', flush=True)
-        downloader = YTAudioDownloader(url, options.directory)
-        filename = downloader.filename
-        if downloader.file_exists and not options.override:
-            print(f"File '{filename}' already exists! Skipping!")
-            continue
+    t0 = time.time()
+    url_processor = lambda url: process_url(url, options)
+    with ThreadPoolExecutor(NUM_WORKERS) as executor:
+        downloaded_files = list(filter(None, executor.map(url_processor, urls)))
+        executor.shutdown()
 
-        elapsed = timedelta(seconds=round(time.time() - t0))
-        print(f"Done! [{elapsed}]", flush=True)
-        print(f"File: '{filename}'", flush=True)
-
-        mp3_filename = downloader.basename + ".mp3"
-        # convert to MP3 as the metadata injector only supports MP3 files
-        if (downloader.ext != ".mp3"):
-            print("Converting to *.mp3.. ", flush=True, end='')
-            mp3_filename = convert_to_mp3(filename, delete_original=True)
-            print("Done!")
-
-        # inject metadata
-        print("Injecting metadata.. ", end="", flush=True)
-        metadata = get_metadata_from_downloader(downloader)
-        metadata["title"] = options.title if options.title != "" else metadata["title"]
-        metadata["artist"] = options.artist if options.artist != "" else metadata["artist"]
-        metadata["album_title"] = options.album_title if options.album_title != "" else metadata["album_title"]
-
-        inject_metadata(mp3_filename, metadata)
-
-        print("Done!")
-
-
+    elapsed = timedelta(seconds=round(time.time() - t0))
+    print(f"Processed {len(urls)} URLs and downloaded {len(downloaded_files)} files! [{elapsed}]")
+    for filename in downloaded_files:
+        print(f"\t{filename}")
+    
 if __name__ == "__main__":
     main()
     sys.exit()
