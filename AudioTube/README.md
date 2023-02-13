@@ -1,7 +1,7 @@
 
 ## Description
 
-A simple module that uses [pytube](https://github.com/pytube/pytube) to download audio files and their metadata (such as thumbnails, artist title, album name, etc..) from Youtube. All the metadata are injected into the files using [mutagen](https://github.com/quodlibet/mutagen). 
+A simple module that uses [pytube](https://github.com/pytube/pytube) to download audio files and their metadata (such as thumbnails, artist title, album name, etc..) from Youtube. All the metadata are injected into the files using [mutagen](https://github.com/quodlibet/mutagen). [FFMPEG-Python](https://github.com/kkroening/ffmpeg-python) is used to re-encode the files and converting them into MP3 format.
 
 ## Requirements
 
