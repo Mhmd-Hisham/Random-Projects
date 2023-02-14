@@ -56,8 +56,8 @@ def convert_to_mp3(input_filename: str, delete_original: bool = True) -> str:
     # input_filename  = input_filename.replace(" ", "_")
     # output_filename = output_filename.replace(" ", "_")
 
-    filename, old_ext = input_filename.split(".")
-    temp_file = f"temp_file-{hash(random.random())}.{old_ext}"
+    filename, old_ext = os.path.splitext(input_filename)
+    temp_file = f"temp_file-{hash(random.random())}{old_ext}"
     os.rename(input_filename, temp_file)
 
     output_filename = f"output_file-{hash(random.random())}.mp3"
