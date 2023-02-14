@@ -81,14 +81,16 @@ def get_metadata_from_downloader(downloader: YTAudioDownloader) -> dict:
     if not downloader.metadata_downloaded:
         downloader.download_metadata()
 
-    metadata = dict()
-    metadata["title"] = downloader.title
-    metadata["artist"] = downloader.artist
-    metadata["album_title"] = downloader.album_title
-    metadata["length"] = downloader.length
-    metadata["release_year"] = downloader.release_year
-    metadata["thumbnail"] = downloader.thumbnail
-    metadata["url"] = downloader.url
+    metadata = {
+        "title": downloader.title,
+        "artist": downloader.artist,
+        "album_title": downloader.album_title,
+        "length": downloader.length,
+        "release_year": downloader.release_year,
+        "thumbnail": downloader.thumbnail,
+        "url": downloader.url,
+        'chapters': downloader.chapters,
+    }
 
     return metadata
 
@@ -110,6 +112,8 @@ def inject_metadata(filename: str, metadata: dict, save: bool = True) -> None:
     if save:
         # save the metadata to the file
         editor.save_metadata_to_file()
+
+    editor.add_chapters(metadata['chapters'])
 
 def get_url_list(options: argparse.ArgumentParser):
     urls = []
@@ -152,8 +156,10 @@ def process_url(url: str, options: argparse.ArgumentParser, verbose: bool=True):
     metadata["title"] = options.title if options.title != "" else metadata["title"]
     metadata["artist"] = options.artist if options.artist != "" else metadata["artist"]
     metadata["album_title"] = options.album_title if options.album_title != "" else metadata["album_title"]
+
     inject_metadata(mp3_filename, metadata)
     log(f"Injected metadata to '{filename}'!")
+
     return filename
 
 def main():
