@@ -5,6 +5,8 @@ from mutagen.id3 import ID3NoHeaderError
 from mutagen.id3 import TCOM, TCON, TDRC, TRCK, APIC
 from mutagen.id3 import PictureType, TLEN, WOAR, WXXX
 from mutagen.id3 import ID3, TIT2, TALB, TPE1, TPE2, COMM
+from mutagen.id3 import CHAP, CTOC, CTOCFlags, Encoding
+from mutagen.mp3 import MP3
 
 class MP3MetaDataEditor:
     def __init__(self, filepath:str):
@@ -81,3 +83,36 @@ class MP3MetaDataEditor:
         # self.meta.save(self.filepath, v2_version=3)
         # self.audio.save(v2_version=3)
         self.tags.save(self.filepath, v2_version=3)
+
+    def add_chapters(self, chapters: dict):
+        """
+            Adds chapters to the MP3 file. 
+        """
+        # https://github.com/quodlibet/mutagen/issues/506
+
+        # open the file
+        audio_book = MP3(self.filepath, ID3=self.tags)
+
+        # add the chapters
+        for chapter in chapters:
+            audio_book.tags.add(
+                CHAP(
+                    element_id=chapter['id'],
+                    start_time=chapter['start_time'],
+                    end_time=chapter['end_time'],
+                    sub_frames=[TIT2(encoding=Encoding.UTF8, text=[chapter['title']])]
+                )
+            )
+        
+        # create a table of contents
+        audio_book.tags.add(
+            CTOC(
+                element_id='toc', 
+                flags=CTOCFlags.TOP_LEVEL | CTOCFlags.ORDERED,
+                child_element_ids=[ch['id'] for ch in chapters],
+                sub_frames=[TIT2(encoding=Encoding.UTF8, text=['Table of Contents'])]
+            )
+        )
+
+        # save to file
+        audio_book.save()
