@@ -67,6 +67,7 @@ class YTAudioDownloader:
         self.length = self.yt.length
         self.release_year = self.yt.publish_date.year
         self.metadata_downloaded = True
+        self.chapters = self.get_chapters()
 
         if (self.song != ""):
             self.title = self.song
@@ -94,6 +95,39 @@ class YTAudioDownloader:
                 return metadata["Album"]
         
         return ""
+
+    def get_chapters(self):
+        try:
+            # look for labeled chapters
+            chapters = self.yt.initial_data['engagementPanels'][2]['engagementPanelSectionListRenderer']['content']['structuredDescriptionContentRenderer']['items'][2]['horizontalCardListRenderer']['cards']
+
+        except KeyError:
+            # the video doesn't have any chapters
+            chapters = []
+
+        # clean the chapters dictionary
+        id_padding = len(chapters)
+        chapters = [
+            {
+                # chapter id
+                "id": f"ch{i+1:0{id_padding}}",
+
+                # chapter title
+                "title": ch['macroMarkersListItemRenderer']['title']['simpleText'],
+
+                # thumbnail url
+                "thumbnail_url": ch['macroMarkersListItemRenderer']['thumbnail']['thumbnails'][-1]['url'],
+
+                # start time in seconds
+                "start_time": ch['macroMarkersListItemRenderer']['onTap']['watchEndpoint']['startTimeSeconds'],
+            }
+            for i, ch in enumerate(chapters)
+        ]
+        for i in range(len(chapters)-1):
+            chapters[i]['end_time'] = chapters[i+1]['start_time']
+        chapters[-1]['end_time'] = self.yt.length
+
+        return chapters
 
     def download_audio_to_file(self, path: str, itag: int) -> Tuple[str, bool]:
         """
