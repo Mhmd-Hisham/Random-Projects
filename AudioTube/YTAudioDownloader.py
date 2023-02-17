@@ -1,6 +1,5 @@
 #!/usr/bin/env python 
 #-*- coding: utf-8 -*-
-# TODO: add a feature for splitting chapters into different files
 
 import os
 
@@ -83,39 +82,38 @@ class YTAudioDownloader:
         
         return ""
 
-    def get_chapters(self) -> List[Dict[str, ]]:
+    def get_chapters(self) -> List[Dict]:
         """ Tries to retrieve labeled chapter info from the video (if exists)"""
         try:
             # look for labeled chapters
             chapters = self.yt.initial_data['engagementPanels'][2]['engagementPanelSectionListRenderer']['content']['structuredDescriptionContentRenderer']['items'][2]['horizontalCardListRenderer']['cards']
+            # clean the chapters list
+            id_padding = len(chapters)
+            chapters = [
+                {
+                    # chapter id
+                    "id": f"ch{i+1:0{id_padding}}",
+
+                    # chapter title
+                    "title": ch['macroMarkersListItemRenderer']['title']['simpleText'],
+
+                    # thumbnail url
+                    "thumbnail_url": ch['macroMarkersListItemRenderer']['thumbnail']['thumbnails'][-1]['url'],
+
+                    # start time in seconds
+                    "start_time": ch['macroMarkersListItemRenderer']['onTap']['watchEndpoint']['startTimeSeconds'],
+                }
+                for i, ch in enumerate(chapters)
+            ]
+
+            # adding the end time to each chapter
+            for i in range(len(chapters)-1):
+                chapters[i]['end_time'] = chapters[i+1]['start_time']
+            chapters[-1]['end_time'] = self.yt.length
 
         except KeyError:
             # the video doesn't have any chapters
             chapters = []
-
-        # clean the chapters list
-        id_padding = len(chapters)
-        chapters = [
-            {
-                # chapter id
-                "id": f"ch{i+1:0{id_padding}}",
-
-                # chapter title
-                "title": ch['macroMarkersListItemRenderer']['title']['simpleText'],
-
-                # thumbnail url
-                "thumbnail_url": ch['macroMarkersListItemRenderer']['thumbnail']['thumbnails'][-1]['url'],
-
-                # start time in seconds
-                "start_time": ch['macroMarkersListItemRenderer']['onTap']['watchEndpoint']['startTimeSeconds'],
-            }
-            for i, ch in enumerate(chapters)
-        ]
-
-        # adding the end time to each chapter
-        for i in range(len(chapters)-1):
-            chapters[i]['end_time'] = chapters[i+1]['start_time']
-        chapters[-1]['end_time'] = self.yt.length
 
         return chapters
 
