@@ -4,7 +4,7 @@
 
 import os
 
-from typing import Tuple
+from typing import Tuple, List, Dict
 import pytube
 import requests
 
@@ -61,9 +61,9 @@ class YTAudioDownloader:
 
         # extract metadata if found
         self.title = self.yt.title
-        self.song = self.get_song_name()
-        self.artist = self.get_artist_name()
-        self.album_title = self.get_album_title()
+        self.song = self.get_attribute_from_metadata("Song")
+        self.artist = self.get_attribute_from_metadata("Artist")
+        self.album_title = self.get_attribute_from_metadata("Album")
         self.length = self.yt.length
         self.release_year = self.yt.publish_date.year
         self.metadata_downloaded = True
@@ -72,31 +72,19 @@ class YTAudioDownloader:
         if (self.song != ""):
             self.title = self.song
 
+        # set the song artist as the video author if it's not in the video metadata
         if (self.artist == ""):
-            self.artist = self.yt.author 
+            self.artist = self.yt.author
 
-    def get_song_name(self):
+    def get_attribute_from_metadata(self, attribute_name):
         for metadata in self.yt.metadata.metadata:
-            if "Song" in metadata:
-                return metadata["Song"]
+            if attribute_name in metadata:
+                return metadata[attribute_name]
         
         return ""
 
-    def get_artist_name(self):
-        for metadata in self.yt.metadata.metadata:
-            if "Artist" in metadata:
-                return metadata["Artist"]
-        
-        return ""
-
-    def get_album_title(self):
-        for metadata in self.yt.metadata.metadata:
-            if "Album" in metadata:
-                return metadata["Album"]
-        
-        return ""
-
-    def get_chapters(self):
+    def get_chapters(self) -> List[Dict[str, ]]:
+        """ Tries to retrieve labeled chapter info from the video (if exists)"""
         try:
             # look for labeled chapters
             chapters = self.yt.initial_data['engagementPanels'][2]['engagementPanelSectionListRenderer']['content']['structuredDescriptionContentRenderer']['items'][2]['horizontalCardListRenderer']['cards']
@@ -105,7 +93,7 @@ class YTAudioDownloader:
             # the video doesn't have any chapters
             chapters = []
 
-        # clean the chapters dictionary
+        # clean the chapters list
         id_padding = len(chapters)
         chapters = [
             {
@@ -123,6 +111,8 @@ class YTAudioDownloader:
             }
             for i, ch in enumerate(chapters)
         ]
+
+        # adding the end time to each chapter
         for i in range(len(chapters)-1):
             chapters[i]['end_time'] = chapters[i+1]['start_time']
         chapters[-1]['end_time'] = self.yt.length
