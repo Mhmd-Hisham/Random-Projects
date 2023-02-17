@@ -6,6 +6,7 @@ import sys
 import time
 import random
 import argparse
+from pathlib import Path
 from datetime import timedelta
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor
@@ -54,7 +55,13 @@ def get_opt_parser() -> argparse.ArgumentParser:
         default=False, 
         action="store_true"
     )
-
+    parser.add_argument(
+        "--end-time-offset", 
+        help="Adds an offset to the end time. Only used when splitting the file by chapters", 
+        dest='end_time_offset', 
+        default=0, 
+        type=int,
+    )
     return parser.parse_args()
 
 def convert_to_mp3(input_filename: str, delete_original: bool=True) -> str:
@@ -87,26 +94,30 @@ def convert_to_mp3(input_filename: str, delete_original: bool=True) -> str:
     # os.system(f"del \"{filename}\"")
     return filename+".mp3"
 
-def split_file_from_chapters(input_filename: str, metadata: Dict, delete_original: bool=True) -> List[str]:
+def split_file_from_chapters(input_filename: str, metadata: Dict, delete_original: bool=True, end_time_offset: int=0) -> List[str]:
     # big thanks to this guy: https://www.youtube.com/watch?v=SGsJc1K5xj8&t=481s
     input_stream = ffmpeg.input(input_filename)
     clips = []
     original_thumbnail = bytes(metadata['thumbnail'])
+    original_title = metadata['title']
     for chapter in metadata['chapters']:
-        # get the thumbnail of this video clip
-        res = requests.get(chapter["thumbnail_url"])
-        metadata['thumbnail'] = original_thumbnail if res.status_code != 200 else res.content
-
         # get output filename of the current clip
         filename, ext = os.path.splitext(input_filename)
         clip_filename = f"{filename} - {chapter['title']}{ext}"
 
         # trip the clip and save it to a file
         clip = (input_stream
-                 .filter_("atrim", start=chapter["start_time"], end=chapter["end_time"])
+                 .filter_("atrim", start=chapter["start_time"], end=chapter["end_time"]+end_time_offset)
                  .filter_("asetpts", "PTS-STARTPTS")
         )
         clip.output(clip_filename).run(quiet=True, overwrite_output=True)
+
+        # get the thumbnail of this video clip
+        res = requests.get(chapter["thumbnail_url"])
+        metadata['thumbnail'] = original_thumbnail if res.status_code != 200 else res.content
+
+        # change the song title in ID3 tags to the title of the chapter
+        metadata["title"] = f"{Path(filename).stem} - {chapter['title']}" if chapter['title'] else original_title + "-" + chapter['id']
 
         # inject the metadata to the file
         inject_metadata(clip_filename, metadata)
@@ -203,7 +214,12 @@ def process_url(url: str, options: argparse.ArgumentParser, verbose: bool=True):
 
     clips = []
     if options.split_chapters and metadata["chapters"]:
-        clips = split_file_from_chapters(mp3_filename, metadata, delete_original=True)
+        clips = split_file_from_chapters(
+            mp3_filename, 
+            metadata, 
+            delete_original=True, 
+            end_time_offset=options.end_time_offset
+        )
 
     return [mp3_filename] + clips
 
