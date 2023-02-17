@@ -7,11 +7,13 @@ import time
 import random
 import argparse
 from datetime import timedelta
+from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor
 import warnings
 warnings.filterwarnings('ignore')
 
 import ffmpeg
+import requests
 from pytube import Playlist
 
 from YTAudioDownloader import YTAudioDownloader
@@ -43,11 +45,19 @@ def get_opt_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p", "--playlist", help="Download songs from a youtube playlist.", dest='playlist_url', default="")
     parser.add_argument(
-        "-o", "--override", help="Override if a file already exists.", dest='override', default=False, type=bool)
+        "-o", "--override", help="Override if a file already exists.", dest='override', default=False, action="store_true")
+    parser.add_argument(
+        "-s", 
+        "--split-chapters", 
+        help="Split the video(s) into different files by chapters metadata (if exists)", 
+        dest='split_chapters', 
+        default=False, 
+        action="store_true"
+    )
 
     return parser.parse_args()
 
-def convert_to_mp3(input_filename: str, delete_original: bool = True) -> str:
+def convert_to_mp3(input_filename: str, delete_original: bool=True) -> str:
     # input_filename =  f"'{input_filename}'"
     # output_filename = f"'{output_filename}'"
     
@@ -61,7 +71,7 @@ def convert_to_mp3(input_filename: str, delete_original: bool = True) -> str:
     os.rename(input_filename, temp_file)
 
     output_filename = f"output_file-{hash(random.random())}.mp3"
-    ffmpeg.input(temp_file).output(output_filename).run(
+    ffmpeg.input(temp_file).audio.output(output_filename).run(
         quiet=True, overwrite_output=True)
 
     if delete_original:
@@ -76,6 +86,36 @@ def convert_to_mp3(input_filename: str, delete_original: bool = True) -> str:
     # os.system(f"ffmpeg -v quiet -y -i \"{filename}\" \"{mp3_filename}\"")
     # os.system(f"del \"{filename}\"")
     return filename+".mp3"
+
+def split_file_from_chapters(input_filename: str, metadata: Dict, delete_original: bool=True) -> List[str]:
+    # big thanks to this guy: https://www.youtube.com/watch?v=SGsJc1K5xj8&t=481s
+    input_stream = ffmpeg.input(input_filename)
+    clips = []
+    original_thumbnail = bytes(metadata['thumbnail'])
+    for chapter in metadata['chapters']:
+        # get the thumbnail of this video clip
+        res = requests.get(chapter["thumbnail_url"])
+        metadata['thumbnail'] = original_thumbnail if res.status_code != 200 else res.content
+
+        # get output filename of the current clip
+        filename, ext = os.path.splitext(input_filename)
+        clip_filename = f"{filename} - {chapter['title']}{ext}"
+
+        # trip the clip and save it to a file
+        clip = (input_stream
+                 .filter_("atrim", start=chapter["start_time"], end=chapter["end_time"])
+                 .filter_("asetpts", "PTS-STARTPTS")
+        )
+        clip.output(clip_filename).run(quiet=True, overwrite_output=True)
+
+        # inject the metadata to the file
+        inject_metadata(clip_filename, metadata)
+        clips.append(clip_filename)
+
+    if delete_original:
+        os.remove(input_filename)
+
+    return clips
 
 def get_metadata_from_downloader(downloader: YTAudioDownloader) -> dict:
     if not downloader.metadata_downloaded:
@@ -94,7 +134,7 @@ def get_metadata_from_downloader(downloader: YTAudioDownloader) -> dict:
 
     return metadata
 
-def inject_metadata(filename: str, metadata: dict, save: bool = True) -> None:
+def inject_metadata(filename: str, metadata: dict, save: bool=True, add_chapters: bool=False) -> None:
     editor = MP3MetaDataEditor(filename)
     editor.set_length(metadata["length"])
     editor.set_release_year(metadata["release_year"])
@@ -107,13 +147,14 @@ def inject_metadata(filename: str, metadata: dict, save: bool = True) -> None:
     editor.set_album_picture(metadata["thumbnail"], "image/png")
 
     editor.set_author_url(metadata["url"])
-    editor.set_comment("Downloaded from AudioTube.")
+    editor.set_comment("Downloaded from AudioTube. Credits: https://github.com/Mhmd-Hisham")
 
     if save:
         # save the metadata to the file
         editor.save_metadata_to_file()
 
-    editor.add_chapters(metadata['chapters'])
+    if add_chapters:
+        editor.add_chapters(metadata['chapters'])
 
 def get_url_list(options: argparse.ArgumentParser):
     urls = []
@@ -157,10 +198,14 @@ def process_url(url: str, options: argparse.ArgumentParser, verbose: bool=True):
     metadata["artist"] = options.artist if options.artist != "" else metadata["artist"]
     metadata["album_title"] = options.album_title if options.album_title != "" else metadata["album_title"]
 
-    inject_metadata(mp3_filename, metadata)
+    inject_metadata(mp3_filename, metadata, add_chapters=True)
     log(f"Injected metadata to '{filename}'!")
 
-    return filename
+    clips = []
+    if options.split_chapters and metadata["chapters"]:
+        clips = split_file_from_chapters(mp3_filename, metadata, delete_original=True)
+
+    return [mp3_filename] + clips
 
 def main():
     options = get_opt_parser()
@@ -178,9 +223,12 @@ def main():
 
     elapsed = timedelta(seconds=round(time.time() - t0))
     print(f"Processed {len(urls)} URLs and downloaded {len(downloaded_files)} files! [{elapsed}]")
-    for filename in downloaded_files:
-        print(f"\t{filename}")
-    
+    for list_of_filenames in downloaded_files:
+        print(f"\t{list_of_filenames[0]}")
+        if len(list_of_filenames) > 1:
+            for filename in list_of_filenames[1:]:
+                print(f"\t\t{filename}")
+
 if __name__ == "__main__":
     main()
     sys.exit()
