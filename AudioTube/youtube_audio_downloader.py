@@ -188,7 +188,13 @@ def process_url(url: str, options: argparse.ArgumentParser, verbose: bool=True):
     log = lambda text: write_log(text, flush=True, verbose=verbose)
     log(f"Parsing '{url}'")
     # print(f"Downloading audio..  ", end='', flush=True)
-    downloader = YTAudioDownloader(url, options.directory)
+    try:
+        downloader = YTAudioDownloader(url, options.directory)
+    except Exception as e:
+        print(f"Exception '{e}' was raised while trying to retrieve a valid stream for '{url}'..")
+        print("Skipping...")
+        return None
+
     filename = downloader.filename
     if downloader.file_exists and not options.override:
         log(f"File '{filename}' already exists! Skipping!")
