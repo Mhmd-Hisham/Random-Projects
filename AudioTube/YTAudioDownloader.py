@@ -36,6 +36,8 @@ def file_basename_exists_at_path(filename: str, path: str) -> str:
     return ""
 
 class YTAudioDownloader:
+    audio_itags = get_audio_itags()
+
     def __init__(self, url:str, path:str):
         self.yt = pytube.YouTube(url)
         self.url = self.yt.watch_url
@@ -43,10 +45,8 @@ class YTAudioDownloader:
         self.path = path
         os.makedirs(self.path, exist_ok=True)
 
-        self._itags = get_audio_itags()
-
         # try to find the best itag then
-        self.itag = next(filter(self.yt.streams.get_by_itag, self._itags), -1)
+        self.itag = next(filter(self.yt.streams.get_by_itag, YTAudioDownloader.audio_itags), -1)
 
         # download the file and get the filename
         self.filename, self.file_exists = self.download_audio_to_file(self.path, self.itag)
